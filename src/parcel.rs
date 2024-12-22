@@ -1,4 +1,5 @@
 
+use std::fmt;
 use std::collections::HashMap;
 use std::path::Path;
 use serde::{Serialize, Deserialize, Serializer, Deserializer};
@@ -71,45 +72,48 @@ impl Parcel {
 		Self {
 			owner,
 			location,
-			art: std::iter::repeat_n(" ".repeat(24), 12).collect(),
-			mask: std::iter::repeat_n(" ".repeat(24), 12).collect(),
+			art: std::iter::repeat(" ".repeat(24)).take(12).collect(),
+			mask: std::iter::repeat(" ".repeat(24)).take(12).collect(),
 			links: HashMap::new()
 		}
 	}
 
 	pub fn from_text(text: &str, owner: Owner) -> Result<Self, ParseError> {
-		let mut lines = text.lines();
+		let mut lines = text.lines().enumerate();
 		// first line is the location of the plot: 2 integers separated by whitespace
-		let location: Pos = Pos::from_space_separated(lines.next().ok_or(ParseError::EmptyFile)?)
-			.ok_or(ParseError::PosLine)?;
+		let (_, first_line) = lines.next().ok_or(ParseError{ kind: ParseErrorKind::EmptyFile, row: 0, line: "".to_string() })?;
+		let location: Pos = Pos::from_space_separated(first_line)
+			.ok_or(ParseError{ kind: ParseErrorKind::PosLine, row: 0, line: first_line.to_string() })?;
 		// the next 12 lines are the art that is actually drawn
 		// if there are less than 12 lines or less than 24 characters per line then the missing area is filled in with whitespace
 		// any characters after 24 are ignored
 		let art: Vec<String> = read_plot(&mut lines);
-		// If the next line is an empty line, then the 12 lines after that are the mask
-		// If the next line is a single dash then the mask is the same as the art
-		// If there is no next line it doesn't matter what the mask is since it is not used
-		// If the next line is something else then the user made a mistake
-		let mask: Vec<String> = match lines.next().map(str::trim) {
-			None | Some("-") => art.clone(),
-			Some("") => read_plot(&mut lines),
-			Some(x) => return Err(ParseError::SeparatorLine(x.to_string()))
-		};
+		// If the separator line is an empty line, then the 12 lines after that are the mask
+		// If the separator line is a single dash then the mask is the same as the art
+		// If the end of the file has been reached then it doesn't matter what the mask is since it is not used
+		// If the separator line is something else then the user made a mistake
+		let mask: Vec<String> =
+			if let Some((row, line)) = lines.next() {
+				match line.trim() {
+					"-" => art.clone(),
+					"" => read_plot(&mut lines),
+					_ => return Err(ParseError{ kind: ParseErrorKind::SeparatorLine, row, line: line.to_string() })
+				}
+			} else {
+				art.clone()
+			};
 		// all remaining lines are link definitions
 		// they consist of the key (a single non-whitespace character that should occur in the mask), and a link (separated by whitespace)
-		let links = lines
-			.map(str::trim)
-			.filter(|line| !line.is_empty())
-			.map(|line| {
-				let (charpart, link) = strutil::split_once_whitespace(line)
-					.ok_or(ParseError::LinkLine(line.to_string()))?;
-				Ok((
-					strutil::to_char(charpart)
-						.ok_or(ParseError::LinkLine(charpart.to_string()))?,
-					link.to_string()
-				))
-			})
-			.collect::<Result<HashMap<char, String>, ParseError>>()?;
+		let mut links: HashMap<char, String> = HashMap::new();
+		for (row, line_raw) in lines {
+			let line = line_raw.trim();
+			if line.is_empty() { continue; }
+			let (charpart, link) = strutil::split_once_whitespace(line)
+				.ok_or(ParseError{ kind: ParseErrorKind::LinkLine, row, line: line.to_string() })?;
+			let key: char = strutil::to_char(charpart)
+				.ok_or(ParseError{ kind: ParseErrorKind::LinkLine, row, line: line.to_string() })?;
+			links.insert(key, link.to_string());
+		}
 		Ok(Self {owner, location, art, mask, links})
 	}
 
@@ -159,19 +163,37 @@ impl Parcel {
 	}
 }
 
-fn read_plot<'a>(lines: &mut impl Iterator<Item=&'a str>) -> Vec<String> {
+fn read_plot<'a>(lines: &mut impl Iterator<Item=(usize, &'a str)>) -> Vec<String> {
 	(0..PLOT_HEIGHT)
-		.map(|_| strutil::to_length(lines.next().unwrap_or(""), PLOT_WIDTH, ' '))
+		.map(|_| strutil::to_length(lines.next().unwrap_or((0, "")).1, PLOT_WIDTH, ' '))
 		.collect::<Vec<String>>()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ParseError {
+pub struct ParseError {
+	pub kind: ParseErrorKind,
+	pub row: usize,
+	pub line: String
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ParseErrorKind {
 	EmptyFile,
 	PosLine,
-	SeparatorLine(String),
-	LinkLine(String)
+	SeparatorLine,
+	LinkLine
 }
+impl fmt::Display for ParseError {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		let message = match self.kind {
+			ParseErrorKind::EmptyFile => "The file is empty",
+			ParseErrorKind::PosLine => "The first line must contain to position of the plot as 2 integers separated by a space",
+			ParseErrorKind::SeparatorLine => "After the plot there must be a separator line that's either empty or only contains a '-' character",
+			ParseErrorKind::LinkLine => "Each line line must start with a key (single character), followed by a space, followed by the link"
+		};
+		write!(f, "Parse error: {}\n on line {}: \"{}\"", message, self.row + 1, self.line)
+	}
+}
+impl std::error::Error for ParseError {}
 
 #[cfg(test)]
 mod tests {
@@ -197,16 +219,16 @@ mod tests {
 
 	#[test]
 	fn parse_error_when_empty() {
-		assert_eq!(Parcel::from_text("", Owner::Public), Err(ParseError::EmptyFile));
+		assert_eq!(Parcel::from_text("", Owner::Public).unwrap_err().kind, ParseErrorKind::EmptyFile);
 	}
 
 	#[test]
 	fn parse_error_when_position_invalid() {
-		assert_eq!(Parcel::from_text(" ", Owner::Public), Err(ParseError::PosLine));
-		assert_eq!(Parcel::from_text("123", Owner::Public), Err(ParseError::PosLine));
-		assert_eq!(Parcel::from_text("a 3", Owner::Public), Err(ParseError::PosLine));
-		assert_eq!(Parcel::from_text("5 b", Owner::Public), Err(ParseError::PosLine));
-		assert_eq!(Parcel::from_text("10 11 12", Owner::Public), Err(ParseError::PosLine));
+		assert_eq!(Parcel::from_text(" ", Owner::Public).unwrap_err().kind, ParseErrorKind::PosLine);
+		assert_eq!(Parcel::from_text("123", Owner::Public).unwrap_err().kind, ParseErrorKind::PosLine);
+		assert_eq!(Parcel::from_text("a 3", Owner::Public).unwrap_err().kind, ParseErrorKind::PosLine);
+		assert_eq!(Parcel::from_text("5 b", Owner::Public).unwrap_err().kind, ParseErrorKind::PosLine);
+		assert_eq!(Parcel::from_text("10 11 12", Owner::Public).unwrap_err().kind, ParseErrorKind::PosLine);
 	}
 
 	#[test]
