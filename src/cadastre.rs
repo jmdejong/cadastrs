@@ -4,18 +4,21 @@ use std::collections::HashMap;
 use serde::{de, Serialize, Deserialize, Serializer, Deserializer};
 use crate::{
   pos::Pos,
-  parcel::{Parcel, Owner}
+  parcel::{Parcel, Owner, PLOT_WIDTH, PLOT_HEIGHT},
+  background::Background
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Cadastre {
-	seed: u64,
-	places: HashMap<PosKey, Parcel>
+	// seed: u64,
+	places: HashMap<PosKey, Parcel>,
+	#[serde(rename="seed")]
+	background: Background
 }
 
 impl Cadastre {
 	pub fn empty() -> Self {
-		Self { seed: 1, places: HashMap::new() }
+		Self { places: HashMap::new(), background: Background(1) }
 	}
 
 	pub fn build(old: &Self, parcels: impl Iterator<Item=Parcel>) -> Self {
@@ -41,18 +44,43 @@ impl Cadastre {
 				places.insert(key, parcel);
 			}
 		}
-
 		Self {
 			places,
-			seed: old.seed.wrapping_mul(211).wrapping_add(53) & 0xffffffff,
+			background: old.background.next()
 		}
 	}
 
+	fn parcel(&self, pos: Pos) -> Option<&Parcel> {
+		self.places.get(&PosKey::from_pos(pos))
+	}
+
 	fn owner_of(&self, pos: Pos) -> Option<Owner> {
-		self.places.get(&PosKey::from_pos(pos)).map(|parcel| parcel.owner.clone())
+		self.parcel(pos).map(|parcel| parcel.owner.clone())
+	}
+
+	pub fn render_text<F>(&self, width: usize, height: usize, mut writer: F) //-> impl Iterator<Item = String> + use<'_>{
+			where F: FnMut(&str) {
+		for y in 0..(height * PLOT_HEIGHT) {
+			self.text_line(width, y as i64, &mut writer);
+			writer("\n")
+		}
+	}
+
+	pub fn text_line<F>(&self, width: usize, y: i64, mut writer: F)
+			where F: FnMut(&str) {
+		let plot_y = y / PLOT_HEIGHT as i64;
+		let inner_y = y as usize % PLOT_HEIGHT;
+		for plot_x in 0..width {
+			if let Some(parcel) = self.parcel(Pos::new(plot_x as i64, plot_y)) {
+				writer(parcel.text_line(inner_y));
+			} else {
+				for x in (PLOT_WIDTH*plot_x)..(PLOT_WIDTH*(plot_x+1)) {
+					writer(self.background.char_at(Pos::new(x as i64, y)));
+				}
+			}
+		}
 	}
 }
-
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
 pub struct PosKey(Pos);

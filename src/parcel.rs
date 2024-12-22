@@ -7,8 +7,8 @@ use crate::{
   strutil
 };
 
-const PLOT_WIDTH: usize = 24;
-const PLOT_HEIGHT: usize = 12;
+pub const PLOT_WIDTH: usize = 24;
+pub const PLOT_HEIGHT: usize = 12;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Owner {
@@ -111,6 +111,10 @@ impl Parcel {
 			})
 			.collect::<Result<HashMap<char, String>, ParseError>>()?;
 		Ok(Self {owner, location, art, mask, links})
+	}
+
+	pub fn text_line(&self, y: usize) -> &str {
+		&self.art[y]
 	}
 }
 

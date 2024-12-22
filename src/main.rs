@@ -1,4 +1,5 @@
 
+mod background;
 mod cadastre;
 mod config;
 mod parcel;
@@ -9,8 +10,9 @@ mod strutil;
 mod main {
 
 	use std::fs;
+	use std::fs::File;
+	use std::io::{Write, ErrorKind};
 	use std::path::Path;
-	use std::io::ErrorKind;
 	use clap::Parser;
 	use crate::{
 		config::{Command, Action, Config},
@@ -33,13 +35,15 @@ mod main {
 	}
 
 	fn update(config: Config, old: Cadastre) {
-		let cadastre = generate_cadastre(&config, &old);
+		let cadastre: Cadastre = generate_cadastre(&config, &old);
 
 		println!("{:?}", cadastre);
 		write_file_safe(config.town_json, serde_json::to_string(&cadastre).unwrap()).unwrap();
+		let mut text_file = File::create(config.txt_render).unwrap();
+		cadastre.render_text(25, 25, |txt| text_file.write_all(txt.as_bytes()).unwrap());
 	}
 
-	fn generate_cadastre(config: &Config, old: &Cadastre) {
+	fn generate_cadastre(config: &Config, old: &Cadastre) -> Cadastre {
 		let adminparcels = config.admin_parcel.iter()
 			.filter_map(|path| read_parcel(path, Owner::Admin));
 
@@ -57,7 +61,7 @@ mod main {
 
 		let parcels = adminparcels.chain(userparcels).chain(publicparcels);
 
-		Cadastre::build(&old, parcels);
+		Cadastre::build(&old, parcels)
 	}
 
 	fn read_parcel(path: &Path, owner: Owner) -> Option<Parcel> {
@@ -92,7 +96,6 @@ mod main {
 						.unwrap_or("invalid")
 				)
 			);
-
 		fs::write(&temppath, contents)?;
 		fs::rename(&temppath, path)?;
 		Ok(())
