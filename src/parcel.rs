@@ -116,6 +116,47 @@ impl Parcel {
 	pub fn text_line(&self, y: usize) -> &str {
 		&self.art[y]
 	}
+
+	pub fn html_line(&self, y: usize) -> String {
+		let mut line = String::with_capacity(PLOT_WIDTH);
+		let mut opened = false;
+		if y == 0 {
+			if let Owner::User(name) = &self.owner {
+				opened = true;
+				line.push_str(&format!("<span id=\"{}\">", name));
+			}
+		}
+		let mut last_key: Option<char> = None;
+		for (ch, mch) in self.art[y].chars().zip(self.mask[y].chars()) {
+
+			if last_key.is_some_and(|k| k != mch) {
+				line.push_str("</a>");
+				last_key = None;
+			}
+			if let Some(link) = self.links.get(&mch) {
+				if last_key.is_none() {
+					line.push_str(&format!("<a href=\"{}\">", link));
+					last_key = Some(mch);
+				}
+			}
+			if ch == '<' {
+				line.push_str("&lt;");
+			} else if ch == '>' {
+				line.push_str("&gt;");
+			} else if ch == '&' {
+				line.push_str("&amp;");
+			} else {
+				line.push(ch);
+			}
+		}
+		if last_key.is_some() {
+			line.push_str("</a>");
+		}
+		if opened {
+			line.push_str("</span>");
+		}
+		line
+	}
 }
 
 fn read_plot<'a>(lines: &mut impl Iterator<Item=&'a str>) -> Vec<String> {

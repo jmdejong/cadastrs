@@ -61,24 +61,42 @@ impl Cadastre {
 	pub fn render_text<F>(&self, width: usize, height: usize, mut writer: F) //-> impl Iterator<Item = String> + use<'_>{
 			where F: FnMut(&str) {
 		for y in 0..(height * PLOT_HEIGHT) {
-			self.text_line(width, y as i64, &mut writer);
+			let plot_y = y as i64 / PLOT_HEIGHT as i64;
+			let inner_y = y as usize % PLOT_HEIGHT;
+			for plot_x in 0..width {
+				if let Some(parcel) = self.parcel(Pos::new(plot_x as i64, plot_y)) {
+					writer(parcel.text_line(inner_y));
+				} else {
+					for x in (PLOT_WIDTH*plot_x)..(PLOT_WIDTH*(plot_x+1)) {
+						writer(self.background.char_at(Pos::new(x as i64, y as i64)));
+					}
+				}
+			}
 			writer("\n")
 		}
 	}
 
-	pub fn text_line<F>(&self, width: usize, y: i64, mut writer: F)
+	pub fn render_html<F>(&self, width: usize, height: usize, mut writer: F) //-> impl Iterator<Item = String> + use<'_>{
 			where F: FnMut(&str) {
-		let plot_y = y / PLOT_HEIGHT as i64;
-		let inner_y = y as usize % PLOT_HEIGHT;
-		for plot_x in 0..width {
-			if let Some(parcel) = self.parcel(Pos::new(plot_x as i64, plot_y)) {
-				writer(parcel.text_line(inner_y));
-			} else {
-				for x in (PLOT_WIDTH*plot_x)..(PLOT_WIDTH*(plot_x+1)) {
-					writer(self.background.char_at(Pos::new(x as i64, y)));
+		writer("<!DOCTYPE html>\n<html>\n<!-- See tilde.town/~troido/cadastre for instructions -->\n<head>\n<meta charset='utf-8'>\n<style>\na {text-decoration: none}\n</style>\n</head>\n<body><pre>\n");
+		for y in 0..(height * PLOT_HEIGHT) {
+			let plot_y = y as i64 / PLOT_HEIGHT as i64;
+			let inner_y = y as usize % PLOT_HEIGHT;
+			for plot_x in 0..width {
+				if inner_y == 0 {
+					writer(&format!("<span id=\"{},{}\"></span>", plot_x, plot_y));
+				}
+				if let Some(parcel) = self.parcel(Pos::new(plot_x as i64, plot_y)) {
+					writer(&parcel.html_line(inner_y));
+				} else {
+					for x in (PLOT_WIDTH*plot_x)..(PLOT_WIDTH*(plot_x+1)) {
+						writer(self.background.char_at(Pos::new(x as i64, y as i64)));
+					}
 				}
 			}
+			writer("\n");
 		}
+		writer("</pre></body>\n<!-- Cadastre made by ~troido; art by tilde.town users -->\n</html>\n");
 	}
 }
 
@@ -180,6 +198,238 @@ mod tests {
 	}
 
 	#[test]
+	fn render_text() {
+		let mut text = String::new();
+		let cadastre = little_town();
+		cadastre.render_text(2, 2, |line| text.push_str(line));
+		// println!("{}", text);
+		let expected = r#"+------.................                       .
+|      |               .                       .
+ . |      |           . __                     .
+..|          |         . ~\________            .
+|              |       ._   ~  ~   \_ {%%}     .
+|                 |   .  \_______~<><{%%%%}    .
+|     feels         |.           \   ~{%%}     .
+|       must          |           \><>!||      .
+|         flow         |          |~  !||      .
+|         _            |           \  ~ `\     .
+|      ---  -_         |            \__   \    .
++------ .......--------π               \~  |   .
++==()=================+.╔══════════════════════╗
+| (%&8)  /\       _,__|.║ Tilde.town Cadastre  ║
+|(&(%)%)/  \    . __,_|.║                      ║
+| (%8%)/_##_\   .     |.║ Any tilde.town user  ║
+|  ||/ |    |   . @   |.║ can claim a parcel   ║
+|  ||  | /\ | * . @   |.║ of land to show some ║
+|  ||  |_||_|   .     |.║ awesome ascii art    ║
+|        ..  *  . "'` |.║                      ║
+| (%) O  ........     |.║ * Instructions       ║
+|        ..    ~troido|.║ * source (github)    ║
++=======#  #==========+.║      Made by ~troido ║
+........................╚══════════════════════╝
+"#;
+		compare_text(&text, expected);
+	}
+
+	#[test]
+	fn render_html() {
+		let mut text = String::new();
+		let cadastre = little_town();
+		cadastre.render_html(2, 2, |line| text.push_str(line));
+		// println!("{}", text);
+		let expected = r#"<!DOCTYPE html>
+<html>
+<!-- See tilde.town/~troido/cadastre for instructions -->
+<head>
+<meta charset='utf-8'>
+<style>
+a {text-decoration: none}
+</style>
+</head>
+<body><pre>
+<span id="0,0"></span><span id="vilmibm">+------.................</span><span id="1,0"></span>                       .
+|      |               .                       .
+ . |      |           . __                     .
+..|          |         . ~\________            .
+|              |       ._   ~  ~   \_ {%%}     .
+|                 |   .  \_______~&lt;&gt;&lt;{%%%%}    .
+|     <a href="https://tilde.town/~vilmibm">feels</a>         |.           \   ~{%%}     .
+|       <a href="https://tilde.town/~vilmibm">must</a>          |           \&gt;&lt;&gt;!||      .
+|         <a href="https://tilde.town/~vilmibm">flow</a>         |          |~  !||      .
+|         _            |           \  ~ `\     .
+|      ---  -_         |            \__   \    .
++------ .......--------<a href="https://libraryofbabel.info/random.cgi">π</a>               \~  |   .
+<span id="0,1"></span><span id="troido"><a href="https://tilde.town/~troido/cadastre/">+==</a>()<a href="https://tilde.town/~troido/cadastre/">=================+</a>.</span><span id="1,1"></span>╔══════════════════════╗
+<a href="https://tilde.town/~troido/cadastre/">|</a> (%&amp;8)  <a href="https://tilde.town/~troido/entrance.html">/\</a>       _,__<a href="https://tilde.town/~troido/cadastre/">|</a>.║ Tilde.town Cadastre  ║
+<a href="https://tilde.town/~troido/cadastre/">|</a>(&amp;(%)%)<a href="https://tilde.town/~troido/entrance.html">/  \</a>    . __,_<a href="https://tilde.town/~troido/cadastre/">|</a>.║                      ║
+<a href="https://tilde.town/~troido/cadastre/">|</a> (%8%)<a href="https://tilde.town/~troido/entrance.html">/_##_\</a>   .     <a href="https://tilde.town/~troido/cadastre/">|</a>.║ Any tilde.town user  ║
+<a href="https://tilde.town/~troido/cadastre/">|</a>  ||/ <a href="https://tilde.town/~troido/entrance.html">|    |</a>   . @   <a href="https://tilde.town/~troido/cadastre/">|</a>.║ can claim a parcel   ║
+<a href="https://tilde.town/~troido/cadastre/">|</a>  ||  <a href="https://tilde.town/~troido/entrance.html">| /\ |</a> * . @   <a href="https://tilde.town/~troido/cadastre/">|</a>.║ of land to show some ║
+<a href="https://tilde.town/~troido/cadastre/">|</a>  ||  <a href="https://tilde.town/~troido/entrance.html">|_||_|</a>   .     <a href="https://tilde.town/~troido/cadastre/">|</a>.║ awesome ascii art    ║
+<a href="https://tilde.town/~troido/cadastre/">|</a>        ..  *  . "'` <a href="https://tilde.town/~troido/cadastre/">|</a>.║                      ║
+<a href="https://tilde.town/~troido/cadastre/">|</a> (%) O  ........     <a href="https://tilde.town/~troido/cadastre/">|</a>.║ * <a href="https://tilde.town/~troido/cadastre">Instructions</a>       ║
+<a href="https://tilde.town/~troido/cadastre/">|</a>        ..    <a href="https://tilde.town/~troido/index.html">~troido</a><a href="https://tilde.town/~troido/cadastre/">|</a>.║ * <a href="https://github.com/jmdejong/cadastre">source (github)</a>    ║
+<a href="https://tilde.town/~troido/cadastre/">+=======#  #==========+</a>.║      Made by <a href="https://tilde.town/~troido/index.html">~troido</a> ║
+........................╚══════════════════════╝
+</pre></body>
+<!-- Cadastre made by ~troido; art by tilde.town users -->
+</html>
+"#;
+		compare_text(&text, expected);
+	}
+
+	fn little_town() -> Cadastre {
+		Cadastre {
+			background: Background(8138474425133413201),
+			places: hashmap!(
+				PosKey::new(0, 0) => Parcel {
+					owner: Owner::user("vilmibm"),
+					location: Pos::new(0, 0),
+					art: [
+						"+------.................",
+						"|      |               .",
+						" . |      |           . ",
+						"..|          |         .",
+						"|              |       .",
+						"|                 |   . ",
+						"|     feels         |.  ",
+						"|       must          | ",
+						"|         flow         |",
+						"|         _            |",
+						"|      ---  -_         |",
+						"+------ .......--------π"
+					].map(String::from).to_vec(),
+					mask: [
+						"+------.................",
+						"|      |               .",
+						" . |      |           . ",
+						"..|          |         .",
+						"|              |       .",
+						"|                 |   . ",
+						"|     11111         |.  ",
+						"|       1111          | ",
+						"|         1111         |",
+						"|         _            |",
+						"|      ---  -_         |",
+						"+------ .......--------2"
+					].map(String::from).to_vec(),
+					links: hashmap!(
+						'1' => "https://tilde.town/~vilmibm".to_string(),
+						'2' => "https://libraryofbabel.info/random.cgi".to_string()
+					)
+				},
+				PosKey::new(0, 1) => Parcel {
+					owner: Owner::user("troido"),
+					location: Pos::new(0, 1),
+					art: [
+						"+==()=================+.",
+						"| (%&8)  /\\       _,__|.",
+						"|(&(%)%)/  \\    . __,_|.",
+						"| (%8%)/_##_\\   .     |.",
+						"|  ||/ |    |   . @   |.",
+						"|  ||  | /\\ | * . @   |.",
+						"|  ||  |_||_|   .     |.",
+						"|        ..  *  . \"'` |.",
+						"| (%) O  ........     |.",
+						"|        ..    ~troido|.",
+						"+=======#  #==========+.",
+						"........................"
+					].map(String::from).to_vec(),
+					mask: [
+						"111()111111111111111111.",
+						"1 (%&8)  33       _,__1.",
+						"1(&(%)%)3333    . __,_1.",
+						"1 (%8%)333333   .     1.",
+						"1  ||/ 333333   . @   1.",
+						"1  ||  333333 * . @   1.",
+						"1  ||  333333   .     1.",
+						"1        ..  *  . \"'` 1.",
+						"1 (%) O  ........     1.",
+						"1        ..    22222221.",
+						"11111111111111111111111.",
+						"........................"
+					].map(String::from).to_vec(),
+					links: hashmap!(
+						'1' => "https://tilde.town/~troido/cadastre/".to_string(),
+						'2' => "https://tilde.town/~troido/index.html".to_string(),
+						'3' => "https://tilde.town/~troido/entrance.html".to_string()
+					)
+				},
+				PosKey::new(1, 1) => Parcel {
+					owner: Owner::Admin,
+					location: Pos::new(1, 1),
+					art: [
+						"╔══════════════════════╗",
+						"║ Tilde.town Cadastre  ║",
+						"║                      ║",
+						"║ Any tilde.town user  ║",
+						"║ can claim a parcel   ║",
+						"║ of land to show some ║",
+						"║ awesome ascii art    ║",
+						"║                      ║",
+						"║ * Instructions       ║",
+						"║ * source (github)    ║",
+						"║      Made by ~troido ║",
+						"╚══════════════════════╝"
+					].map(String::from).to_vec(),
+					mask: [
+						"~~~~~~~~~~~~~~~~~~~~~~~~",
+						"~ Tilde.town Cadastre  ~",
+						"~                      ~",
+						"~ Any tilde.town user  ~",
+						"~ can claim a parcel   ~",
+						"~ of land to show some ~",
+						"~ awesome ascii art    ~",
+						"~                      ~",
+						"~ * 111111111111       ~",
+						"~ * 222222222222222    ~",
+						"~      Made by 3333333 ~",
+						"~~~~~~~~~~~~~~~~~~~~~~~~"
+					].map(String::from).to_vec(),
+					links: hashmap!(
+						'1' => "https://tilde.town/~troido/cadastre".to_string(),
+						'2' => "https://github.com/jmdejong/cadastre".to_string(),
+						'3' => "https://tilde.town/~troido/index.html".to_string()
+					)
+				},
+				PosKey::new(1, 0) => Parcel {
+					owner: Owner::Public,
+					location: Pos::new(1, 0),
+					art: [
+						"                       .",
+						"                       .",
+						"__                     .",
+						" ~\\________            .",
+						"_   ~  ~   \\_ {%%}     .",
+						" \\_______~<><{%%%%}    .",
+						"         \\   ~{%%}     .",
+						"          \\><>!||      .",
+						"          |~  !||      .",
+						"           \\  ~ `\\     .",
+						"            \\__   \\    .",
+						"               \\~  |   ."
+					].map(String::from).to_vec(),
+					mask: [
+						"                        ",
+						"                        ",
+						"                        ",
+						"                        ",
+						"                        ",
+						"                        ",
+						"                        ",
+						"                        ",
+						"                        ",
+						"                        ",
+						"                        ",
+						"                        "
+					].map(String::from).to_vec(),
+					links: HashMap::new()
+				}
+			)
+		}
+	}
+
+	#[test]
 	fn deserialize_town_from_json() {
 		let town = r#"
 {
@@ -257,9 +507,9 @@ mod tests {
 				"3": "https://tilde.town/~troido/entrance.html"
 			}
 		},
-		"1,2": {
+		"1,1": {
 			"owner": "@_admin",
-			"location": [1, 2],
+			"location": [1, 1],
 			"art": [
 				"╔══════════════════════╗",
 				"║ Tilde.town Cadastre  ║",
@@ -271,7 +521,7 @@ mod tests {
 				"║                      ║",
 				"║ * Instructions       ║",
 				"║ * source (github)    ║",
-				"║      Made by ~Troido ║",
+				"║      Made by ~troido ║",
 				"╚══════════════════════╝"
 			],
 			"linkmask": [
@@ -294,22 +544,22 @@ mod tests {
 				"3": "https://tilde.town/~troido/index.html"
 			}
 		},
-		"0,11": {
+		"1,0": {
 			"owner": null,
-			"location": [0, 11],
+			"location": [1, 0],
 			"art": [
-				"                        ",
-				"                        ",
-				"__                      ",
-				" ~\\________             ",
-				"_   ~  ~   \\_ {%%}      ",
-				" \\_______~<><{%%%%}     ",
-				"         \\   ~{%%}      ",
-				"          \\><>!||       ",
-				"          |~  !||       ",
-				"           \\  ~ `\\      ",
-				"            \\__   \\     ",
-				"               \\~  |    "
+				"                       .",
+				"                       .",
+				"__                     .",
+				" ~\\________            .",
+				"_   ~  ~   \\_ {%%}     .",
+				" \\_______~<><{%%%%}    .",
+				"         \\   ~{%%}     .",
+				"          \\><>!||      .",
+				"          |~  !||      .",
+				"           \\  ~ `\\     .",
+				"            \\__   \\    .",
+				"               \\~  |   ."
 			],
 			"linkmask": [
 				"                        ",
@@ -331,159 +581,23 @@ mod tests {
 	"seed": 8138474425133413201
 }
 		"#;
-		let expected: Cadastre = Cadastre {
-			seed: 8138474425133413201,
-			places: hashmap!(
-				PosKey::new(0, 0) => Parcel {
-					owner: Owner::user("vilmibm"),
-					location: Pos::new(0, 0),
-					art: [
-						"+------.................",
-						"|      |               .",
-						" . |      |           . ",
-						"..|          |         .",
-						"|              |       .",
-						"|                 |   . ",
-						"|     feels         |.  ",
-						"|       must          | ",
-						"|         flow         |",
-						"|         _            |",
-						"|      ---  -_         |",
-						"+------ .......--------π"
-					].map(String::from).to_vec(),
-					mask: [
-						"+------.................",
-						"|      |               .",
-						" . |      |           . ",
-						"..|          |         .",
-						"|              |       .",
-						"|                 |   . ",
-						"|     11111         |.  ",
-						"|       1111          | ",
-						"|         1111         |",
-						"|         _            |",
-						"|      ---  -_         |",
-						"+------ .......--------2"
-					].map(String::from).to_vec(),
-					links: hashmap!(
-						'1' => "https://tilde.town/~vilmibm".to_string(),
-						'2' => "https://libraryofbabel.info/random.cgi".to_string()
-					)
-				},
-				PosKey::new(0, 1) => Parcel {
-					owner: Owner::user("troido"),
-					location: Pos::new(0, 1),
-					art: [
-						"+==()=================+.",
-						"| (%&8)  /\\       _,__|.",
-						"|(&(%)%)/  \\    . __,_|.",
-						"| (%8%)/_##_\\   .     |.",
-						"|  ||/ |    |   . @   |.",
-						"|  ||  | /\\ | * . @   |.",
-						"|  ||  |_||_|   .     |.",
-						"|        ..  *  . \"'` |.",
-						"| (%) O  ........     |.",
-						"|        ..    ~troido|.",
-						"+=======#  #==========+.",
-						"........................"
-					].map(String::from).to_vec(),
-					mask: [
-						"111()111111111111111111.",
-						"1 (%&8)  33       _,__1.",
-						"1(&(%)%)3333    . __,_1.",
-						"1 (%8%)333333   .     1.",
-						"1  ||/ 333333   . @   1.",
-						"1  ||  333333 * . @   1.",
-						"1  ||  333333   .     1.",
-						"1        ..  *  . \"'` 1.",
-						"1 (%) O  ........     1.",
-						"1        ..    22222221.",
-						"11111111111111111111111.",
-						"........................"
-					].map(String::from).to_vec(),
-					links: hashmap!(
-						'1' => "https://tilde.town/~troido/cadastre/".to_string(),
-						'2' => "https://tilde.town/~troido/index.html".to_string(),
-						'3' => "https://tilde.town/~troido/entrance.html".to_string()
-					)
-				},
-				PosKey::new(1, 2) => Parcel {
-					owner: Owner::Admin,
-					location: Pos::new(1, 2),
-					art: [
-						"╔══════════════════════╗",
-						"║ Tilde.town Cadastre  ║",
-						"║                      ║",
-						"║ Any tilde.town user  ║",
-						"║ can claim a parcel   ║",
-						"║ of land to show some ║",
-						"║ awesome ascii art    ║",
-						"║                      ║",
-						"║ * Instructions       ║",
-						"║ * source (github)    ║",
-						"║      Made by ~Troido ║",
-						"╚══════════════════════╝"
-					].map(String::from).to_vec(),
-					mask: [
-						"~~~~~~~~~~~~~~~~~~~~~~~~",
-						"~ Tilde.town Cadastre  ~",
-						"~                      ~",
-						"~ Any tilde.town user  ~",
-						"~ can claim a parcel   ~",
-						"~ of land to show some ~",
-						"~ awesome ascii art    ~",
-						"~                      ~",
-						"~ * 111111111111       ~",
-						"~ * 222222222222222    ~",
-						"~      Made by 3333333 ~",
-						"~~~~~~~~~~~~~~~~~~~~~~~~"
-					].map(String::from).to_vec(),
-					links: hashmap!(
-						'1' => "https://tilde.town/~troido/cadastre".to_string(),
-						'2' => "https://github.com/jmdejong/cadastre".to_string(),
-						'3' => "https://tilde.town/~troido/index.html".to_string()
-					)
-				},
-				PosKey::new(0, 11) => Parcel {
-					owner: Owner::Public,
-					location: Pos::new(0, 11),
-					art: [
-						"                        ",
-						"                        ",
-						"__                      ",
-						" ~\\________             ",
-						"_   ~  ~   \\_ {%%}      ",
-						" \\_______~<><{%%%%}     ",
-						"         \\   ~{%%}      ",
-						"          \\><>!||       ",
-						"          |~  !||       ",
-						"           \\  ~ `\\      ",
-						"            \\__   \\     ",
-						"               \\~  |    "
-					].map(String::from).to_vec(),
-					mask: [
-						"                        ",
-						"                        ",
-						"                        ",
-						"                        ",
-						"                        ",
-						"                        ",
-						"                        ",
-						"                        ",
-						"                        ",
-						"                        ",
-						"                        ",
-						"                        "
-					].map(String::from).to_vec(),
-					links: HashMap::new()
-				}
-			)
-		};
+		let expected = little_town();
 		let des = serde_json::from_str::<Cadastre>(town).unwrap();
 		for (key, parcel) in &des.places {
 			assert_eq!(parcel, expected.places.get(key).unwrap());
 		}
 		assert_eq!(des, expected);
-		assert_eq!(serde_json::from_str::<Cadastre>(&serde_json::json!(expected).to_string()).unwrap(), expected);
+	}
+	#[test]
+	fn deserializes_serialized() {
+		let town = little_town();
+		assert_eq!(serde_json::from_str::<Cadastre>(&serde_json::json!(town).to_string()).unwrap(), town);
+	}
+
+	fn compare_text(s1: &str, s2: &str) {
+		for (i, (l1, l2)) in s1.lines().zip(s2.lines()).enumerate() {
+			assert_eq!(l1, l2, "mismatch on line {}", i);
+		}
+		assert_eq!(s1, s2);
 	}
 }

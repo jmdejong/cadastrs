@@ -22,25 +22,35 @@ mod main {
 
 	pub fn main() {
 		let command: Command = Command::parse();
-		println!("{:?}", command);
 		match command.action {
-			Action::Init(config) => update(config, Cadastre::empty()),
+			Action::Init(config) => {
+				write_file_safe(&config.town_json, serde_json::to_string(&Cadastre::empty()).unwrap()).unwrap();
+			}
 			Action::Update(config) => {
-				let old: Cadastre = serde_json::from_str(
-					fs::read_to_string(config.town_json_old.clone().unwrap_or(config.town_json.clone())).unwrap().as_str()
-				).unwrap();
-				update(config, old);
+				let old: Cadastre = read_old_cadastre(&config);
+				let cadastre: Cadastre = generate_cadastre(&config, &old);
+				write_file_safe(&config.town_json, serde_json::to_string(&Cadastre::empty()).unwrap()).unwrap();
+				render(&config, &cadastre);
+
+			}
+			Action::Render(config) => {
+				let cadastre: Cadastre = read_old_cadastre(&config);
+				render(&config, &cadastre);
 			}
 		}
 	}
 
-	fn update(config: Config, old: Cadastre) {
-		let cadastre: Cadastre = generate_cadastre(&config, &old);
+	fn read_old_cadastre(config: &Config) -> Cadastre {
+		serde_json::from_str(
+			fs::read_to_string(config.town_json_old.clone().unwrap_or(config.town_json.clone())).unwrap().as_str()
+		).unwrap()
+	}
 
-		println!("{:?}", cadastre);
-		write_file_safe(config.town_json, serde_json::to_string(&cadastre).unwrap()).unwrap();
-		let mut text_file = File::create(config.txt_render).unwrap();
+	fn render(config: &Config, cadastre: &Cadastre) {
+		let mut text_file = File::create(&config.txt_render).unwrap();
 		cadastre.render_text(25, 25, |txt| text_file.write_all(txt.as_bytes()).unwrap());
+		let mut html_file = File::create(&config.html_render).unwrap();
+		cadastre.render_html(25, 25, |html| html_file.write_all(html.as_bytes()).unwrap());
 	}
 
 	fn generate_cadastre(config: &Config, old: &Cadastre) -> Cadastre {

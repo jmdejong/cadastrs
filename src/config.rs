@@ -51,5 +51,7 @@ pub enum Action {
 	/// Create new cadastre world
 	Init(Config),
 	/// Update cadastre world with townie data
-	Update(Config)
+	Update(Config),
+	/// Create html and txt render of existing town json
+	Render(Config)
 }
