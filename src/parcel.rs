@@ -52,7 +52,7 @@ impl Parcel {
 		// If the end of the file has been reached then it doesn't matter what the mask is since it is not used
 		// If the separator line is something else then this and all following lines should be ignored
 		let mask: Vec<String> =
-			if let Some((row, line)) = lines.next() {
+			if let Some((_row, line)) = lines.next() {
 				match line.trim() {
 					"-" => art.clone(),
 					"" => read_plot(&mut lines),
@@ -103,7 +103,7 @@ impl Parcel {
 			// if no link is active and this char has a link, then open the link
 			if let Some(link) = self.links.get(&mch) {
 				if active_key.is_none() {
-					line.push_str(&format!("<a href=\"{}\">", link));
+					line.push_str(&format!("<a href=\"{}\">", link.replace('"', "&quot;")));
 					active_key = Some(mch);
 				}
 			}
@@ -127,6 +127,7 @@ impl Parcel {
 		line
 	}
 }
+
 
 fn process_plot_line(txt: &str, length: usize) -> String {
 	String::from_iter(
@@ -403,5 +404,32 @@ z"#;
 			"     (_____,    `._.'   "
 		]);
 		assert_eq!(parcel.links, HashMap::new());
+	}
+
+	#[test]
+	fn parse_js_in_link() {
+				let parceltext = r#"2 2
+........................
+........................
+.........?????..........
+........................
+........................
+........................
+....!!!!!!!!............
+........................
+........................
+........................
+........................
+........................
+-
+ ?   https://en.wikipedia.org
+! javascript:(function(){ console.log("<hello> " + '"world"'); })()
+"#;
+		let parcel: Parcel = Parcel::from_text(parceltext, Owner::user("troido")).unwrap();
+		assert_eq!(parcel.links, hashmap!(
+			'?' => "https://en.wikipedia.org".to_string(),
+			'!' => r#"javascript:(function(){ console.log("<hello> " + '"world"'); })()"#.to_string()
+		));
+		assert_eq!(parcel.html_line(6), r#"....<a href="javascript:(function(){ console.log(&quot;<hello> &quot; + '&quot;world&quot;'); })()">!!!!!!!!</a>............"#.to_string());
 	}
 }
