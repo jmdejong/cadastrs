@@ -50,13 +50,16 @@ impl Parcel {
 		// If the separator line is an empty line, then the 12 lines after that are the mask
 		// If the separator line is a single dash then the mask is the same as the art
 		// If the end of the file has been reached then it doesn't matter what the mask is since it is not used
-		// If the separator line is something else then the user made a mistake
+		// If the separator line is something else then this and all following lines should be ignored
 		let mask: Vec<String> =
 			if let Some((row, line)) = lines.next() {
 				match line.trim() {
 					"-" => art.clone(),
 					"" => read_plot(&mut lines),
-					_ => return Err(ParseError{ kind: ParseErrorKind::SeparatorLine, row, line: line.to_string() })
+					_ => {
+						lines = "".lines().enumerate(); // don't read any more lines
+						art.clone()
+					}
 				}
 			} else {
 				art.clone()
@@ -85,23 +88,26 @@ impl Parcel {
 		let mut opened = false;
 		if y == 0 {
 			if let Owner::User(name) = &self.owner {
+				// The first line of a plot should have the username as anchor
 				opened = true;
 				line.push_str(&format!("<span id=\"{}\">", name));
 			}
 		}
-		let mut last_key: Option<char> = None;
+		let mut active_key: Option<char> = None;
 		for (ch, mch) in self.art[y].chars().zip(self.mask[y].chars()) {
-
-			if last_key.is_some_and(|k| k != mch) {
+			// if the last char had a link and this one does not or has a different link, then close it
+			if active_key.is_some_and(|k| k != mch) {
 				line.push_str("</a>");
-				last_key = None;
+				active_key = None;
 			}
+			// if no link is active and this char has a link, then open the link
 			if let Some(link) = self.links.get(&mch) {
-				if last_key.is_none() {
+				if active_key.is_none() {
 					line.push_str(&format!("<a href=\"{}\">", link));
-					last_key = Some(mch);
+					active_key = Some(mch);
 				}
 			}
+			// replace html unsafe characters
 			if ch == '<' {
 				line.push_str("&lt;");
 			} else if ch == '>' {
@@ -112,7 +118,7 @@ impl Parcel {
 				line.push(ch);
 			}
 		}
-		if last_key.is_some() {
+		if active_key.is_some() {
 			line.push_str("</a>");
 		}
 		if opened {
@@ -204,6 +210,32 @@ mod tests {
 	#[test]
 	fn replace_disallowed_characters() {
 		assert_eq!(process_plot_line("|..👻.◫.|", 8), "|..?.?.|".to_string());
+	}
+
+	#[test]
+	fn parse_smaller_parcel() {
+		let parceltext = r#" 0  1
+1234567890
+1234567890123456789012345678901234567890
+31
+a
+z"#;
+		let parcel: Parcel = Parcel::from_text(parceltext, Owner::user("troido")).unwrap();
+		assert_eq!(parcel.art, vec![
+			"1234567890              ",
+			"123456789012345678901234",
+			"31                      ",
+			"a                       ",
+			"z                       ",
+			"                        ",
+			"                        ",
+			"                        ",
+			"                        ",
+			"                        ",
+			"                        ",
+			"                        "
+		]);
+		assert_eq!(parcel.links, HashMap::new());
 	}
 
 	#[test]
@@ -332,5 +364,44 @@ mod tests {
 			)
 		};
 		assert_eq!(Parcel::from_text(parceltext, Owner::user("johndoe")).unwrap(), expected);
+	}
+
+	#[test]
+	fn parse_larger_parcel() {
+		let parceltext = r#" 0  1
+ ___________
+< Cadastre! >
+ -----------
+\                             .       .
+ \                           / `.   .' "
+  \                  .---.  <    > <    >  .---.
+   \                 |    \  \ - ~ ~ - /  /    |
+         _____          ..-~             ~-..-~
+        |     |   \~~~\.'                    `./~~~/
+       ---------   \__/                        \__/
+      .'  O    \     /               /       \  "
+     (_____,    `._.'               |         }  \/~~~/
+      `----.          /       }     |        /    \__/
+            `-.      |       /      |       /      `. ,~~|
+                ~-.__|      /_ - ~ ^|      /- _      `..-'
+                     |     /        |     /     ~-.     `-. _  _  _
+                     |_____|        |_____|         ~ - . _ _ _ _ _>
+"#;
+		let parcel: Parcel = Parcel::from_text(parceltext, Owner::user("troido")).unwrap();
+		assert_eq!(parcel.art, vec![
+			" ___________            ",
+			"< Cadastre! >           ",
+			" -----------            ",
+			"\\                       ",
+			" \\                      ",
+			"  \\                  .--",
+			"   \\                 |  ",
+			"         _____          ",
+			"        |     |   \\~~~\\.",
+			"       ---------   \\__/ ",
+			"      .'  O    \\     /  ",
+			"     (_____,    `._.'   "
+		]);
+		assert_eq!(parcel.links, HashMap::new());
 	}
 }
