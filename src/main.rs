@@ -32,7 +32,7 @@ mod main {
 			Action::Update(config) => {
 				let old: Cadastre = read_old_cadastre(&config);
 				let cadastre: Cadastre = generate_cadastre(&config, &old);
-				write_file_safe(&config.town_json, serde_json::to_string(&Cadastre::empty()).expect("Failed to serialize cadastre"))
+				write_file_safe(&config.town_json, serde_json::to_string(&cadastre).expect("Failed to serialize cadastre"))
 					.expect("Failed to write town json file");
 				render(&config, &cadastre);
 			}
