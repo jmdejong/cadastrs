@@ -1,59 +1,18 @@
 
 use std::fmt;
-use std::collections::HashMap;
-use std::path::Path;
-use serde::{Serialize, Deserialize, Serializer, Deserializer};
+use std::collections::{HashMap, HashSet};
+use serde::{Serialize, Deserialize};
+use lazy_static::lazy_static;
 use crate::{
-  pos::{Pos},
-  strutil
+  pos::Pos,
+  strutil,
+  owner::Owner
 };
 
 pub const PLOT_WIDTH: usize = 24;
 pub const PLOT_HEIGHT: usize = 12;
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Owner {
-	Admin,
-	User(String),
-	Public
-}
-
-impl Owner {
-	pub fn priority(&self) -> i32 {
-		match self {
-			Self::Admin => 3,
-			Self::User(_) => 2,
-			Self::Public => 1
-		}
-	}
-	pub fn user(name: &str) -> Self {
-		Self::User(name.to_string())
-	}
-	pub fn from_homedir(homedir: &Path) -> Option<Self> {
-		Some(Self::user(homedir.file_name()?.to_str()?))
-	}
-}
-
-
-impl Serialize for Owner {
-	fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-	where S: Serializer {
-		match self {
-			Self::Admin => "@_admin".serialize(serializer),
-			Self::User(name) => name.serialize(serializer),
-			Self::Public => ().serialize(serializer)
-		}
-	}
-}
-impl<'de> Deserialize<'de> for Owner {
-	fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-	where D: Deserializer<'de> {
-		Ok(match <Option<&str>>::deserialize(deserializer)? {
-			None => Self::Public,
-			Some("@_admin") => Self::Admin,
-			Some(name) => Self::user(name)
-		})
-	}
+lazy_static! {
+	static ref allowed_characters: HashSet<char> = " !\"#$%&\'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~¥¨°²´·¿×ōπᓚᗢᘏ†•…‾∞≈≡⊞─│┌┏┐┓└┗┘┛├┣┤┫┬┳┴┻┼╂═║╒╔╕╗╘╚╛╜╝╟╠╢╣╤╥╦╧╩╫╭╮╰╱╲╿▀▁▂▃▄█▉▊▌▎▐░▒▓▔▙▛▜▟▪►◄◊◘◠☆☺♠♥♪♫♯⚵⚶⛭✥✽❀➅➐⠀⠁⠃⠈⠋⠘⠙⠛⠞⠟⠳⠺⠾⡀⡇⡞⡤⢀⢇⢠⢤⢦⢩⢫⢸⢹⢻⢾⢿⣀⣄⣆⣠⣤⣬⣯⣳⣴⣷⣻⣼⣽⣿".chars().collect();
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -163,9 +122,18 @@ impl Parcel {
 	}
 }
 
+fn process_plot_line(txt: &str, length: usize) -> String {
+	String::from_iter(
+		txt.chars()
+			.chain(std::iter::repeat(' '))
+			.take(length)
+			.map(|ch| if allowed_characters.contains(&ch) { ch } else { '?' })
+	)
+}
+
 fn read_plot<'a>(lines: &mut impl Iterator<Item=(usize, &'a str)>) -> Vec<String> {
 	(0..PLOT_HEIGHT)
-		.map(|_| strutil::to_length(lines.next().unwrap_or((0, "")).1, PLOT_WIDTH, ' '))
+		.map(|_| process_plot_line(lines.next().unwrap_or((0, "")).1, PLOT_WIDTH))
 		.collect::<Vec<String>>()
 }
 
@@ -201,23 +169,6 @@ mod tests {
 	use crate::hashmap;
 
 	#[test]
-	fn serialize_owner(){
-		assert_eq!(serde_json::json!(Owner::Admin).to_string(), "\"@_admin\"");
-		assert_eq!(serde_json::json!(Owner::user("troido")).to_string(), "\"troido\"");
-		assert_eq!(serde_json::json!(Owner::Public).to_string(), "null");
-	}
-
-	#[test]
-	fn deserialize_owner(){
-		assert!(serde_json::from_str::<Owner>("{}").is_err());
-		assert!(serde_json::from_str::<Owner>("3").is_err());
-		assert!(serde_json::from_str::<Owner>("\"").is_err());
-		assert_eq!(serde_json::from_str::<Owner>("\"@_admin\"").unwrap(), Owner::Admin);
-		assert_eq!(serde_json::from_str::<Owner>("\"troido\"").unwrap(), Owner::user("troido"));
-		assert_eq!(serde_json::from_str::<Owner>("null").unwrap(), Owner::Public);
-	}
-
-	#[test]
 	fn parse_error_when_empty() {
 		assert_eq!(Parcel::from_text("", Owner::Public).unwrap_err().kind, ParseErrorKind::EmptyFile);
 	}
@@ -229,6 +180,30 @@ mod tests {
 		assert_eq!(Parcel::from_text("a 3", Owner::Public).unwrap_err().kind, ParseErrorKind::PosLine);
 		assert_eq!(Parcel::from_text("5 b", Owner::Public).unwrap_err().kind, ParseErrorKind::PosLine);
 		assert_eq!(Parcel::from_text("10 11 12", Owner::Public).unwrap_err().kind, ParseErrorKind::PosLine);
+	}
+
+	#[test]
+	fn truncate_long_str() {
+		assert_eq!(process_plot_line("hello_world", 8), "hello_wo".to_string());
+	}
+
+	#[test]
+	fn pad_short_str() {
+		assert_eq!(process_plot_line("hi", 8), "hi      ".to_string());
+	}
+
+	#[test]
+	fn truncate_unicode() {
+		assert_eq!(process_plot_line("║╒╔╕╗", 1), "║".to_string());
+		assert_eq!(process_plot_line("║╒╔╕╗", 2), "║╒".to_string());
+		assert_eq!(process_plot_line("║╒╔╕╗", 3), "║╒╔".to_string());
+		assert_eq!(process_plot_line("║╒╔╕╗", 4), "║╒╔╕".to_string());
+		assert_eq!(process_plot_line("║╒╔╕╗", 5), "║╒╔╕╗".to_string());
+	}
+
+	#[test]
+	fn replace_disallowed_characters() {
+		assert_eq!(process_plot_line("|..👻.◫.|", 8), "|..?.?.|".to_string());
 	}
 
 	#[test]

@@ -4,7 +4,8 @@ use std::collections::HashMap;
 use serde::{de, Serialize, Deserialize, Serializer, Deserializer};
 use crate::{
   pos::Pos,
-  parcel::{Parcel, Owner, PLOT_WIDTH, PLOT_HEIGHT},
+  parcel::{Parcel, PLOT_WIDTH, PLOT_HEIGHT},
+  owner::Owner,
   background::Background
 };
 
@@ -101,7 +102,7 @@ impl Cadastre {
 }
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
-pub struct PosKey(Pos);
+struct PosKey(Pos);
 
 impl PosKey {
 	#[allow(dead_code)]
@@ -136,10 +137,7 @@ impl<'de> Deserialize<'de> for PosKey {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::{
-		hashmap,
-		parcel::Owner
-	};
+	use crate::hashmap;
 
 	#[test]
 	fn serialize_poskey_to_and_from_string() {

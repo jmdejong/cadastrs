@@ -2,6 +2,7 @@
 mod background;
 mod cadastre;
 mod config;
+mod owner;
 mod parcel;
 mod pos;
 mod util;
@@ -17,7 +18,8 @@ mod main {
 	use crate::{
 		config::{Command, Action, Config},
 		cadastre::Cadastre,
-		parcel::{Parcel, Owner},
+		parcel::Parcel,
+		owner::Owner,
 	};
 
 	pub fn main() {
